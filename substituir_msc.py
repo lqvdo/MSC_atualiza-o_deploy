@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import openpyxl
 
 st.title("Atualizador de Arquivo MSC")
 
@@ -97,3 +98,4 @@ if uploaded_csv and uploaded_xlsx:
             file_name="202508 MSC_atualizada.csv",
             mime="text/csv"
         )
+
