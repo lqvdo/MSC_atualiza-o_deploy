@@ -30,18 +30,38 @@ if uploaded_csv and uploaded_xlsx:
         for conta in sheet_names:
             df = pd.read_excel(uploaded_xlsx, sheet_name=conta, dtype=str)
 
+            # Definir a natureza da conta e o indicador FP
+            if conta.startswith('1'):
+                natureza_saldo_conta = 'D'
+                natureza_mov_baixa = 'C'
+                indicador_FP = "1;FP"
+            elif conta.startswith('2'):
+                natureza_saldo_conta = 'C'
+                natureza_mov_baixa = 'D'
+                indicador_FP = "1;FP"
+            elif conta.startswith('8'):
+                natureza_saldo_conta = 'C'
+                natureza_mov_baixa = 'D'
+                indicador_FP = ";"
+
+            
             # POs únicos nessa aba
             pos_unicos = df.iloc[:, 1].dropna().unique()  # coluna 1 (segunda) é o PO
 
             for PO in pos_unicos:
                 item_movimento = []
                 item_saldo_final = []
+                item_movimento_devedor = []
 
                 for item in msc_lista:
-                    if item.startswith(f'{conta};{PO};PO;1;FP;') and item.endswith("period_change;D"):
+                    if item.startswith(f'{conta};{PO};PO;{indicador_FP};') and item.endswith(f"period_change;{natureza_mov_baixa}"):
                         item_movimento.append(item)
-                    elif item.startswith(f'{conta};{PO};PO;1;FP;') and item.endswith('ending_balance;C'):
+                    elif item.startswith(f'{conta};{PO};PO;{indicador_FP};') and item.endswith(f'ending_balance;{natureza_saldo_conta}'):
                         item_saldo_final.append(item)
+                    elif item.startswith(f'{conta};{PO};PO;{indicador_FP};') and item.endswith(f'period_change;{natureza_saldo_conta}'):
+                        if natureza_saldo_conta == 'D':
+                            item_movimento_devedor.append(item)
+
 
                 if not item_movimento or not item_saldo_final:
                     st.warning(f"Aba {conta}, PO {PO} não encontrou linhas correspondentes no CSV, pulando...")
@@ -55,9 +75,17 @@ if uploaded_csv and uploaded_xlsx:
                 partes[13] = f"{valor_mov_novo:.2f}"
                 itens_novos = []
                 itens_novos.append(";".join(partes))
-
+                if item_movimento_devedor:
+                    itens_novos.append(item_movimento_devedor[0])
+                
                 # Filtra só as linhas desse PO
                 linhas_po = df[df.iloc[:, 1] == PO].values.tolist()
+                linhas_po_df = df[df.iloc[:, 1] == PO]
+                soma_valores = float(pd.to_numeric(linhas_po_df.iloc[:, 3], errors="coerce").sum())
+
+                if round(soma_valores, 2) != round(valor_end, 2):
+                    st.warning(f"Aba {conta}: O valor total do PO {PO} \(R\$ {soma_valores:.2f}\) não bate com o saldo final na MSC (R$ {valor_end})!")
+                    
 
                 for linha in linhas_po:
                     fonte = linha[2]
@@ -66,7 +94,7 @@ if uploaded_csv and uploaded_xlsx:
                     partes[6] = 'FR'
                     partes[13] = f'{float(valor):.2f}'
                     partes[14] = 'period_change'
-                    partes[15] = 'C'
+                    partes[15] = natureza_saldo_conta
                     itens_novos.append(";".join(partes))
                     partes[14] = 'ending_balance'
                     itens_novos.append(";".join(partes))
@@ -74,7 +102,7 @@ if uploaded_csv and uploaded_xlsx:
                 # Substitui no resultado final
                 nova_lista = []
                 for item in msc_nova:
-                    if not item in item_saldo_final:
+                    if not item in item_saldo_final and not item in item_movimento_devedor:
                         if item in item_movimento:
                             for item_novo in itens_novos:
                                 nova_lista.append(item_novo)
@@ -98,4 +126,3 @@ if uploaded_csv and uploaded_xlsx:
             file_name="202508 MSC_atualizada.csv",
             mime="text/csv"
         )
-
